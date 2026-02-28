@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Build outputs (do not commit - too large for GitHub)
+dist/
+src-tauri/target/
+
+# Env and IDE
+.env
+.env.*
+*.local
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS
+.DS_Store
+Thumbs.db

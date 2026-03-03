@@ -1,8 +1,12 @@
+use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+#[cfg(target_os = "windows")]
+use winapi::um::winbase::CREATE_SUSPENDED;
 
 #[cfg(target_os = "windows")]
 fn inject_dll(pid: u32, dll_path: &str) -> Result<(), String> {
@@ -85,6 +89,36 @@ pub async fn launch_game(
 ) -> Result<String, String> {
     let game = PathBuf::from(&game_path);
 
+    // Paks directory sanity check (from Flux-Launcher: avoid launching with wrong/corrupt install)
+    let paks_dir = game.join("FortniteGame").join("Content").join("Paks");
+    if paks_dir.exists() && paks_dir.is_dir() {
+        let file_count = fs::read_dir(&paks_dir).map_err(|e| format!("Failed to read Paks directory: {}", e))?.filter_map(|e| e.ok()).filter(|e| e.path().is_file()).count();
+        if file_count > 56 {
+            return Err(format!("Too many files in Paks directory ({} files). Install may be corrupted or wrong version.", file_count));
+        }
+    }
+
+    // Remove NVIDIA Aftermath DLL if present to avoid launch issues (from Flux-Launcher)
+    let aftermath_dll = game.join("Engine").join("Binaries").join("ThirdParty").join("NVIDIA").join("NVaftermath").join("Win64").join("GFSDK_Aftermath_Lib.x64.dll");
+    if aftermath_dll.exists() {
+        for attempt in 0..50 {
+            match fs::remove_file(&aftermath_dll) {
+                Ok(_) => break,
+                Err(e) if attempt >= 49 => return Err(format!("Failed to remove Aftermath DLL after 50 attempts: {}", e)),
+                _ => {
+                    if !aftermath_dll.exists() {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+            }
+        }
+    }
+    let aftermath_dir = game.join("Engine").join("Binaries").join("ThirdParty").join("NVIDIA").join("NVaftermath").join("Win64");
+    if !aftermath_dir.exists() {
+        fs::create_dir_all(&aftermath_dir).map_err(|e| format!("Failed to create directory for DLL: {}", e))?;
+    }
+
     let shipping_exe = game
         .join("FortniteGame")
         .join("Binaries")
@@ -136,6 +170,7 @@ pub async fn launch_game(
             .creation_flags(CREATE_NO_WINDOW)
             .args(&fort_args)
             .arg(&auth_password)
+            .stdout(Stdio::piped())
             .spawn()
             .map_err(|e| format!("Failed to start FortniteClient: {}", e))?;
 
@@ -143,15 +178,17 @@ pub async fn launch_game(
 
         if launcher_exe.exists() {
             let _ = Command::new(&launcher_exe)
-                .creation_flags(CREATE_NO_WINDOW | 0x00000004) // CREATE_SUSPENDED
+                .creation_flags(CREATE_NO_WINDOW | CREATE_SUSPENDED)
                 .args(&fort_args)
+                .stdout(Stdio::piped())
                 .spawn();
         }
 
         if be_exe.exists() {
             let _ = Command::new(&be_exe)
-                .creation_flags(CREATE_NO_WINDOW | 0x00000004)
+                .creation_flags(CREATE_NO_WINDOW | CREATE_SUSPENDED)
                 .args(&fort_args)
+                .stdout(Stdio::piped())
                 .spawn();
         }
 

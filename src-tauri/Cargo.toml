@@ -1,6 +1,6 @@
 [package]
 name = "apex-launcher"
-version = "1.0.1"
+version = "1.0.2"
 description = "Apex - Fortnite Version Launcher"
 authors = ["oliver (@uziwif)"]
 edition = "2021"

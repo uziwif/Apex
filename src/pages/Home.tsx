@@ -172,7 +172,7 @@ export default function Home() {
                 <div className="glass rounded-xl p-4 flex-1 min-h-0 overflow-y-auto">
                   <div className="flex items-center gap-2 mb-3">
                     <span className="text-[11px] font-bold text-white">Apex Launcher</span>
-                    <span className="rounded-full bg-[color:var(--accent)] px-1.5 py-px text-[9px] font-bold text-black">v1.0.0</span>
+                    <span className="rounded-full bg-[color:var(--accent)] px-1.5 py-px text-[9px] font-bold text-black">v{__APP_VERSION__}</span>
                     <span className="ml-auto text-[10px] text-[color:var(--text-secondary)]">Feb 2026</span>
                   </div>
                   <div className="space-y-2 text-[11px]">

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import AnimatedBackground from './AnimatedBackground'
 
-const LAUNCHER_VERSION = '1.0.0'
+const LAUNCHER_VERSION = __APP_VERSION__
 
 const STEPS = [
   'Checking for updates...',

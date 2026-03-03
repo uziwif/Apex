@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 
-const CURRENT_VERSION = '1.0.0'
+const CURRENT_VERSION = __APP_VERSION__
 const LS_KEY = 'apex-last-seen-version'
 
 const CHANGELOG = [
   {
-    version: '1.0.0',
-    title: 'Apex Launcher v1.0',
+    version: __APP_VERSION__,
+    title: `Apex Launcher v${__APP_VERSION__}`,
     items: [
       '200+ Fortnite versions from OT6.5 to The Simpsons Season',
       'Download mirrors with community archive scraping',

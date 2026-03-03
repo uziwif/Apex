@@ -422,11 +422,11 @@ export default function Settings() {
               </div>
             </CollapsibleSection>
 
-            <CollapsibleSection title={t('settings.about')} subtitle="Apex Launcher v1.0.0">
+            <CollapsibleSection title={t('settings.about')} subtitle={`Apex Launcher v${__APP_VERSION__}`}>
               <div className="text-xs text-[color:var(--text-secondary)] space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="font-semibold text-white">Apex Launcher</span>
-                  <span className="rounded-full bg-[rgba(255,255,255,0.06)] px-2.5 py-0.5 text-[10px] font-semibold">v1.0.0</span>
+                  <span className="rounded-full bg-[rgba(255,255,255,0.06)] px-2.5 py-0.5 text-[10px] font-semibold">v{__APP_VERSION__}</span>
                 </div>
                 <p>{t('settings.aboutDesc')}</p>
 

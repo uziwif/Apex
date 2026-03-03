@@ -1,11 +1,13 @@
 {
   "identifier": "default",
-  "description": "Default capability for all app windows (IPC, window controls, updater, process)",
+  "description": "Default capability for all app windows (IPC, window controls, updater, process, dialog)",
   "windows": ["*"],
   "permissions": [
     "core:default",
     "updater:default",
     "process:allow-restart",
-    "process:allow-exit"
+    "process:allow-exit",
+    "dialog:allow-open",
+    "dialog:allow-save"
   ]
 }

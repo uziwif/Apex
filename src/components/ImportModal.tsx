@@ -107,16 +107,8 @@ export default function ImportModal({
   const selectedV = versions.find((v) => v.id === selectedVersion)
 
   const handleBrowse = async () => {
-    if (typeof window !== 'undefined' && (window as unknown as { __TAURI__?: unknown }).__TAURI__) {
-      try {
-        const { open: openDialog } = await import('@tauri-apps/plugin-dialog')
-        const selected = await openDialog({ directory: true, title: 'Select game build folder' })
-        if (selected) setImportPath(selected as string)
-      } catch {}
-    } else {
-      const input = prompt('Enter the path to the game build folder:', importPath)
-      if (input !== null) setImportPath(input.trim())
-    }
+    const selected = await import('../lib/fileDialog').then((m) => m.openDirectory('Select game build folder', importPath || undefined))
+    if (selected) setImportPath(selected)
   }
 
   const runDetection = useCallback(() => {

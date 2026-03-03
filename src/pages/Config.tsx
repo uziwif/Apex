@@ -7,6 +7,7 @@ import AnimatedBackground from '../components/AnimatedBackground'
 import { useConfigStore } from '../store/configStore'
 import { useToastStore } from '../store/toastStore'
 import { useInternalFilesStore, GITHUB_URLS } from '../store/internalFilesStore'
+import { openDirectory, openDllFile, openDllFiles } from '../lib/fileDialog'
 import type { DownloadStatus } from '../store/internalFilesStore'
 
 type ComponentKey = 'backend' | 'gameserver' | 'redirect'
@@ -45,15 +46,12 @@ function ComponentCard({ comp }: { comp: typeof COMPONENTS[number] }) {
   const statusCfg = STATUS_CONFIG[entry.status]
 
   const handleBrowse = async () => {
-    if (typeof window !== 'undefined' && (window as unknown as { __TAURI__?: unknown }).__TAURI__) {
-      try {
-        const { open } = await import('@tauri-apps/plugin-dialog')
-        const selected = await open({ directory: true, title: `Select ${comp.label} directory` })
-        if (selected) setPath(comp.key, selected as string)
-      } catch {}
+    if (comp.key === 'redirect') {
+      const selected = await openDllFile(`Select Tellurium.dll`, entry.path || undefined)
+      if (selected) setPath(comp.key, selected)
     } else {
-      const input = prompt(`Enter path for ${comp.label}:`, entry.path)
-      if (input !== null) setPath(comp.key, input.trim())
+      const selected = await openDirectory(`Select ${comp.label} directory`, entry.path || undefined)
+      if (selected) setPath(comp.key, selected)
     }
   }
 
@@ -160,15 +158,12 @@ export default function Config() {
   }
 
   const handleCustomBrowse = async () => {
-    if (typeof window !== 'undefined' && (window as unknown as { __TAURI__?: unknown }).__TAURI__) {
-      try {
-        const { open } = await import('@tauri-apps/plugin-dialog')
-        const selected = await open({ directory: false, title: 'Select file', multiple: false })
-        if (selected) setNewPath(selected as string)
-      } catch {}
+    if (newType === 'redirect') {
+      const selected = await openDllFile('Select DLL file (.dll only)', newPath || undefined)
+      if (selected) setNewPath(selected)
     } else {
-      const input = prompt('Enter file path:', newPath)
-      if (input) setNewPath(input.trim())
+      const selected = await openDirectory('Select component directory', newPath || undefined)
+      if (selected) setNewPath(selected)
     }
   }
 
@@ -317,11 +312,12 @@ export default function Config() {
                           <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Component name..."
                             className="w-full rounded-lg border border-[color:var(--border)] bg-[rgba(255,255,255,0.03)] px-3 py-2 text-xs outline-none placeholder:text-[color:var(--text-secondary)] focus:border-[color:var(--accent)] transition-colors" />
                           <div className="flex gap-2">
-                            <input type="text" value={newPath} onChange={(e) => setNewPath(e.target.value)} placeholder="File/directory path..."
+                            <input type="text" value={newPath} onChange={(e) => setNewPath(e.target.value)}
+                              placeholder={newType === 'redirect' ? 'Path to .dll file...' : 'Directory path...'}
                               className="flex-1 rounded-lg border border-[color:var(--border)] bg-[rgba(255,255,255,0.03)] px-3 py-2 text-xs font-mono outline-none placeholder:text-[color:var(--text-secondary)] focus:border-[color:var(--accent)] transition-colors" />
                             <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} type="button" onClick={handleCustomBrowse}
                               className="rounded-lg border border-[color:var(--border)] bg-[rgba(255,255,255,0.04)] px-3 py-2 text-xs font-semibold hover:bg-[rgba(255,255,255,0.08)] transition-colors">
-                              Browse
+                              {newType === 'redirect' ? 'Select DLL' : 'Browse'}
                             </motion.button>
                           </div>
                           <div className="flex gap-3">
@@ -372,6 +368,33 @@ export default function Config() {
 
             {tab === 'advanced' && (
               <motion.div key="advanced" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.12 }} className="mt-4 flex flex-col gap-3">
+                <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-2xl p-5">
+                  <div className="text-sm font-semibold mb-2">Extra DLL Injector</div>
+                  <p className="text-[11px] text-[color:var(--text-secondary)] mb-3">Additional DLLs to inject after the redirect. Injected in order at launch.</p>
+                  <div className="space-y-2 mb-4">
+                    {(config.extraDllPaths ?? []).map((p, i) => (
+                      <div key={i} className="flex items-center gap-2 rounded-lg border border-[color:var(--border)] bg-[rgba(255,255,255,0.02)] px-3 py-2">
+                        <span className="flex-1 text-xs font-mono truncate">{p}</span>
+                        <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} type="button" onClick={() => {
+                          const next = (config.extraDllPaths ?? []).filter((_, j) => j !== i)
+                          config.update({ extraDllPaths: next })
+                        }} className="text-red-400 hover:text-red-300 text-xs font-bold">✕</motion.button>
+                      </div>
+                    ))}
+                  </div>
+                  <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} type="button" onClick={async () => {
+                    const selected = await openDllFiles('Select DLL files to inject', undefined)
+                    if (selected.length > 0) {
+                      const next = [...(config.extraDllPaths ?? []), ...selected]
+                      config.update({ extraDllPaths: next })
+                      addToast(`Added ${selected.length} DLL(s)`, 'success')
+                    }
+                  }}
+                    className="rounded-lg border border-[color:var(--border)] bg-[rgba(255,255,255,0.04)] px-4 py-2 text-xs font-semibold hover:bg-[rgba(255,255,255,0.08)] transition-colors">
+                    + Add DLL(s)
+                  </motion.button>
+                </motion.div>
+
                 <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-2xl p-5">
                   <div className="text-sm font-semibold mb-3">{tr('config.launchArgs')}</div>
                   <input type="text" value={config.launchArgs ?? ''} onChange={(e) => config.update({ launchArgs: e.target.value })}

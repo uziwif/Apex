@@ -8,8 +8,8 @@ function isTauri(): boolean {
 
 function defaultBasePath(): string {
   if (typeof window === 'undefined') return ''
-  if (isTauri()) return '' // resolved at runtime via Tauri path API
-  return '%APPDATA%/Apex'
+  // In Tauri, we use %LOCALAPPDATA%\Apex (resolved by Rust); fallback for SSR/browser
+  return '%LOCALAPPDATA%/Apex'
 }
 
 function getStored(key: string, fallback: string): string {
@@ -77,7 +77,7 @@ export const useInternalFilesStore = create<State>((set, get) => ({
   },
 
   downloadComponent: async (key) => {
-    const { setStatus } = get()
+    const { setStatus, setPath } = get()
     setStatus(key, 'downloading')
 
     if (!isTauri()) {
@@ -91,19 +91,21 @@ export const useInternalFilesStore = create<State>((set, get) => ({
 
     try {
       const { invoke } = await import('@tauri-apps/api/core')
-      const { appLocalDataDir } = await import('@tauri-apps/api/path')
-      const baseDir = await appLocalDataDir()
-      const destPath = `${baseDir}${key}`
       const entry = get()[key]
-      if (!entry.path || entry.path.includes('%APPDATA%')) {
-        get().setPath(key, destPath)
-      }
+      const dest = entry.path && !entry.path.includes('%') ? entry.path : ''
       await invoke('download_component', {
         component: key,
         url: DOWNLOAD_URLS[key],
-        dest: entry.path || destPath,
+        dest,
       })
       setStatus(key, 'ready')
+      // Update stored path with actual destination
+      try {
+        const base = await invoke<string>('resolve_app_data_path')
+        setPath(key, `${base}/${key}`.replace(/\/+/g, '/'))
+      } catch {
+        // Keep existing path if resolve fails
+      }
     } catch (e) {
       setStatus(key, 'error', String(e))
     }

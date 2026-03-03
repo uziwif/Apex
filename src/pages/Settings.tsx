@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
-import { Copy, Check, RotateCcw, Download, Monitor, Heart } from 'lucide-react'
+import { Copy, Check, RotateCcw, Download, Monitor, Heart, RefreshCw } from 'lucide-react'
 import Sidebar from '../components/Sidebar'
 import AnimatedBackground from '../components/AnimatedBackground'
 import { useThemeStore, ACCENT_PRESETS, BG_PRESETS, BG_ANIMATION_OPTIONS } from '../store/themeStore'
@@ -120,6 +120,8 @@ export default function Settings() {
   const [displayName, setDisplayName] = useState(getAuthName())
   const [checking, setChecking] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [logContent, setLogContent] = useState('')
+  const [logLoading, setLogLoading] = useState(false)
   const accountId = useState(() => getOrCreateAccountId())[0]
   const langName = useLanguageStore((s) => s.currentName)
 
@@ -163,17 +165,26 @@ export default function Settings() {
   }
 
   const handleBrowseInstallDir = async () => {
-    if (typeof window !== 'undefined' && (window as unknown as { __TAURI__?: unknown }).__TAURI__) {
-      try {
-        const { open } = await import('@tauri-apps/plugin-dialog')
-        const selected = await open({ directory: true, title: 'Select install directory' })
-        if (selected) { setInstallRoot(selected as string); addToast(t('settings.installDirUpdated'), 'success') }
-      } catch {}
-    } else {
-      const input = prompt('Enter default install directory:', installRoot)
-      if (input !== null) { setInstallRoot(input.trim()); addToast(t('settings.installDirUpdated'), 'success') }
-    }
+    const selected = await import('../lib/fileDialog').then((m) => m.openDirectory('Select install directory', installRoot || undefined))
+    if (selected) { setInstallRoot(selected); addToast(t('settings.installDirUpdated'), 'success') }
   }
+
+  const handleLoadLogs = useCallback(async () => {
+    if (typeof window === 'undefined' || !(window as unknown as { __TAURI__?: unknown }).__TAURI__) {
+      setLogContent('Logs are only available in the desktop app.')
+      return
+    }
+    setLogLoading(true)
+    try {
+      const { invoke } = await import('@tauri-apps/api/core')
+      const content = await invoke<string>('read_log_file')
+      setLogContent(content || '(empty)')
+    } catch (e) {
+      setLogContent(`Failed to load: ${e}`)
+    } finally {
+      setLogLoading(false)
+    }
+  }, [])
 
   const handleCopyId = () => {
     navigator.clipboard.writeText(accountId).then(() => {
@@ -379,6 +390,21 @@ export default function Settings() {
                     ))}
                   </div>
                 </div>
+              </div>
+            </CollapsibleSection>
+
+            <CollapsibleSection title="Logs" subtitle="View app log file" defaultOpen={false}>
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center gap-2">
+                  <motion.button whileTap={{ scale: 0.96 }} type="button" onClick={handleLoadLogs} disabled={logLoading}
+                    className="flex items-center gap-2 rounded-xl border border-[color:var(--border)] bg-[rgba(255,255,255,0.03)] px-4 py-2 text-xs font-semibold text-white hover:bg-[rgba(255,255,255,0.06)] transition disabled:opacity-50">
+                    <RefreshCw size={12} className={logLoading ? 'animate-spin' : ''} /> {logLoading ? 'Loading...' : 'Refresh'}
+                  </motion.button>
+                  <span className="text-[10px] text-[color:var(--text-secondary)]">%LOCALAPPDATA%\\Apex\\logs\\apex.log</span>
+                </div>
+                <pre className="max-h-[240px] overflow-auto rounded-xl border border-[color:var(--border)] bg-[rgba(0,0,0,0.4)] p-3 text-[10px] font-mono text-[color:var(--text-secondary)] whitespace-pre-wrap break-words">
+                  {logContent || 'Click Refresh to load logs.'}
+                </pre>
               </div>
             </CollapsibleSection>
 

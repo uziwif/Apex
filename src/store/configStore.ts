@@ -12,6 +12,8 @@ export type ServerConfig = {
   launchArgs: string
   showConsole: boolean
   autoStartBackend: boolean
+  /** Extra DLLs to inject (paths). Injected after redirect, in order. */
+  extraDllPaths: string[]
 }
 
 const DEFAULTS: ServerConfig = {
@@ -24,6 +26,7 @@ const DEFAULTS: ServerConfig = {
   launchArgs: '',
   showConsole: false,
   autoStartBackend: true,
+  extraDllPaths: [],
 }
 
 function loadConfig(): ServerConfig {

@@ -44,16 +44,8 @@ export default function SetupTutorial() {
   const current = STEPS[step]
 
   const handleBrowse = async () => {
-    if (typeof window !== 'undefined' && (window as unknown as { __TAURI__?: unknown }).__TAURI__) {
-      try {
-        const { open } = await import('@tauri-apps/plugin-dialog')
-        const selected = await open({ directory: true, title: t('setup.installDir') })
-        if (selected) setInstallRoot(selected as string)
-      } catch {}
-    } else {
-      const input = prompt('Enter install directory:', installRoot || 'C:\\Games\\Fortnite Builds')
-      if (input) setInstallRoot(input.trim())
-    }
+    const selected = await import('../lib/fileDialog').then((m) => m.openDirectory(t('setup.installDir'), installRoot || 'C:\\Games\\Fortnite Builds'))
+    if (selected) setInstallRoot(selected)
   }
 
   const downloadAll = () => {

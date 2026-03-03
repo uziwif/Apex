@@ -310,7 +310,7 @@ export default function Library() {
         onPick={(m) => {
           setOpen(false)
           if (!activeId) return
-          void startDownload(activeId, m.url)
+          void startDownload(activeId, m.url, installRoot || undefined)
           navigate('/downloads')
         }}
       />
@@ -322,8 +322,8 @@ export default function Library() {
           const store = useInstalledStore.getState()
           store.setInstallPath(versionId, path)
           setInstalled(versionId, true)
-          const parentDir = path.replace(/[/\\][^/\\]+$/, '') || path
-          if (parentDir !== path) store.setInstallRoot(parentDir)
+          // Do NOT change installRoot on import - import path and install directory are separate.
+          // installRoot is only for where NEW downloads go; imported versions keep their custom path.
         }}
       />
 

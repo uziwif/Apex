@@ -49,7 +49,16 @@ function isLoggedIn() {
 export default function App() {
   const location = useLocation()
   const [loaded, setLoaded] = useState(false)
-  const onLoadingDone = useCallback(() => setLoaded(true), [])
+  const onLoadingDone = useCallback(() => {
+    setLoaded(true)
+    if ((window as unknown as { __TAURI__?: unknown }).__TAURI__) {
+      import('@tauri-apps/api/core').then(({ invoke }) =>
+        invoke('resolve_app_data_path').then(() =>
+          import('./lib/log').then(({ log }) => log('Apex Launcher started'))
+        ).catch(() => {})
+      ).catch(() => {})
+    }
+  }, [])
 
   if (!loaded) {
     return <LoadingScreen onDone={onLoadingDone} />

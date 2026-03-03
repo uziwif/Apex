@@ -16,7 +16,7 @@ A desktop launcher for Fortnite that supports versions **OT6.5** through **32.11
 - **Online** — Connect and play with others
 - **Mods** — Manage mods for your installations
 - **Settings** — Install directory, theme, language, and in-app updates
-- **Auto-updater** — Check for new launcher versions from GitHub Releases
+- **Auto-updater** — Push to main → CI builds → launcher checks Releases and updates
 - **Multi-language** — UI available in multiple languages
 
 ---
@@ -47,10 +47,13 @@ A desktop launcher for Fortnite that supports versions **OT6.5** through **32.11
 
 ### Credits
 
-Credits are in the launcher but ill add them here also. 
+Credits are in the launcher but ill add them here also.
 Just a note that these are tempory solutions being used, will change when i can be bothered to sit down and make the stuff ive used.
 
 Backend = [Lawin](https://github.com/Lawin0129), [LawinServer](https://github.com/Lawin0129/LawinServer)
 Gameserver = [Ploosh](https://github.com/plooshi), [Erbium](https://github.com/plooshi/Erbium)
 Redirect = [Ploosh](https://github.com/plooshi), [Tellurium](https://github.com/plooshi/Tellurium)
 
+---
+
+**Maintainers:** See [SETUP.md](SETUP.md) for one-time setup. Private keys stay in GitHub Secrets only.

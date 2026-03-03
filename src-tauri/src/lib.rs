@@ -16,7 +16,13 @@ pub fn run() {
             commands::launch_game,
             commands::close_game,
             commands::download_component,
+            commands::download_version,
             commands::open_directory,
+            commands::resolve_app_data_path,
+            commands::expand_path,
+            commands::get_app_data_paths,
+            commands::read_log_file,
+            commands::append_log,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

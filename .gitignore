@@ -5,10 +5,15 @@ node_modules/
 dist/
 src-tauri/target/
 
-# Env and IDE
+# Env and secrets (never commit)
 .env
 .env.*
+.env.local
 *.local
+.tauri/
+*.key
+*.pem
+**/secrets*
 .idea/
 .vscode/
 *.suo

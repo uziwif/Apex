@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
@@ -78,16 +79,37 @@ fn inject_dll(pid: u32, dll_path: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn expand_path_str(path: &str) -> String {
+    #[cfg(target_os = "windows")]
+    {
+        let mut s = path.to_string();
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            s = s.replace("%APPDATA%", &appdata).replace("%AppData%", &appdata);
+        }
+        if let Ok(local) = std::env::var("LOCALAPPDATA") {
+            s = s.replace("%LOCALAPPDATA%", &local).replace("%LocalAppData%", &local);
+        }
+        s
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        path.to_string()
+    }
+}
+
 #[tauri::command]
 pub async fn launch_game(
     game_path: String,
     backend_path: String,
-    _redirect_path: String,
+    redirect_path: String,
     _gameserver_path: String,
     backend_host: String,
     backend_port: u16,
+    extra_dll_paths: Option<Vec<String>>,
 ) -> Result<String, String> {
-    let game = PathBuf::from(&game_path);
+    let game = PathBuf::from(expand_path_str(&game_path));
+    let backend_path = expand_path_str(&backend_path);
+    let redirect_path = expand_path_str(&redirect_path);
 
     // Paks directory sanity check (from Flux-Launcher: avoid launching with wrong/corrupt install)
     let paks_dir = game.join("FortniteGame").join("Content").join("Paks");
@@ -193,7 +215,7 @@ pub async fn launch_game(
         }
 
         // Start backend (LawinServer via Node.js)
-        let backend = PathBuf::from(&backend_path);
+        let backend = PathBuf::from(backend_path);
         if backend.exists() {
             let index_js = backend.join("index.js");
             if index_js.exists() {
@@ -205,18 +227,36 @@ pub async fn launch_game(
             }
         }
 
-        // Inject DLL after a short delay
-        let dll_path = get_dll_path();
+        // Inject redirect DLL after a short delay (use user's redirect path, or fallback to bundled)
+        let dll_path = get_redirect_dll_path(&redirect_path);
+        let mut all_dlls: Vec<String> = Vec::new();
         if let Some(dll) = dll_path {
             if dll.exists() {
-                let dll_str = dll.to_string_lossy().to_string();
-                std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_secs(3));
-                    if let Err(e) = inject_dll(game_pid, &dll_str) {
-                        eprintln!("DLL injection failed: {}", e);
-                    }
-                });
+                all_dlls.push(dll.to_string_lossy().to_string());
             }
+        }
+        // Add extra DLLs from config (multi-DLL injector)
+        if let Some(extra) = extra_dll_paths {
+            for p in extra {
+                let expanded = expand_path_str(&p);
+                let path = PathBuf::from(&expanded);
+                if path.exists() && path.extension().map(|e| e == "dll").unwrap_or(false) {
+                    all_dlls.push(expanded);
+                }
+            }
+        }
+        if !all_dlls.is_empty() {
+            let dlls = all_dlls;
+            std::thread::spawn(move || {
+                let mut delay_ms = 3000u64;
+                for dll_str in dlls {
+                    std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+                    if let Err(e) = inject_dll(game_pid, &dll_str) {
+                        eprintln!("DLL injection failed for {}: {}", dll_str, e);
+                    }
+                    delay_ms = 500; // Shorter delay between extra DLLs
+                }
+            });
         }
     }
 
@@ -235,8 +275,36 @@ pub async fn launch_game(
     ))
 }
 
-fn get_dll_path() -> Option<PathBuf> {
-    dirs::data_local_dir().map(|d| d.join("com.apex.launcher").join("Resources").join("redirect.dll"))
+fn get_redirect_dll_path(redirect_path: &str) -> Option<PathBuf> {
+    let path = PathBuf::from(redirect_path);
+    if path.exists() {
+        if path.is_dir() {
+            // Tellurium: look for Tellurium.dll (or redirect.dll for legacy)
+            for candidate in &[
+                path.join("Tellurium.dll"),
+                path.join("redirect.dll"),
+                path.join("x64").join("Release").join("Tellurium.dll"),
+                path.join("x64").join("Release").join("redirect.dll"),
+                path.join("Release").join("Tellurium.dll"),
+                path.join("Release").join("redirect.dll"),
+            ] {
+                if candidate.exists() {
+                    return Some(candidate.clone());
+                }
+            }
+        } else if path.extension().map(|e| e == "dll").unwrap_or(false) {
+            return Some(path);
+        }
+    }
+    // Fallback: AppData\Local\Apex\redirect (downloaded Tellurium)
+    let base = dirs::data_local_dir().map(|d| d.join("Apex").join("redirect"))?;
+    for name in &["Tellurium.dll", "redirect.dll"] {
+        let p = base.join(name);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    None
 }
 
 #[tauri::command]
@@ -267,7 +335,29 @@ pub async fn download_component(
     url: String,
     dest: String,
 ) -> Result<String, String> {
-    let dest_path = PathBuf::from(&dest);
+    let dest_expanded = if dest.is_empty() || dest.contains("%APPDATA%") || dest.contains("%LOCALAPPDATA%") {
+        let base = dirs::data_local_dir()
+            .or_else(dirs::data_dir)
+            .ok_or_else(|| "Could not resolve app data directory".to_string())?;
+        let apex = base.join("Apex");
+        ensure_app_data_structure(&apex)?;
+        apex.join(&component).to_string_lossy().to_string()
+    } else {
+        #[cfg(target_os = "windows")]
+        {
+            let mut s = dest.clone();
+            if let Ok(appdata) = std::env::var("APPDATA") {
+                s = s.replace("%APPDATA%", &appdata).replace("%AppData%", &appdata);
+            }
+            if let Ok(local) = std::env::var("LOCALAPPDATA") {
+                s = s.replace("%LOCALAPPDATA%", &local).replace("%LocalAppData%", &local);
+            }
+            s
+        }
+        #[cfg(not(target_os = "windows"))]
+        dest
+    };
+    let dest_path = PathBuf::from(&dest_expanded);
     if let Some(parent) = dest_path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create directory: {}", e))?;
     }
@@ -323,7 +413,177 @@ pub async fn download_component(
 
     let _ = std::fs::remove_file(&zip_path);
 
-    Ok(format!("{} downloaded to {}", component, dest))
+    Ok(format!("{} downloaded to {}", component, dest_expanded))
+}
+
+#[tauri::command]
+pub async fn download_version(
+    version_id: String,
+    url: String,
+    install_root: String,
+) -> Result<String, String> {
+    let install_root = expand_path_str(&install_root);
+    let dest_dir = PathBuf::from(&install_root).join(&version_id);
+
+    std::fs::create_dir_all(&dest_dir).map_err(|e| format!("Failed to create dest: {}", e))?;
+
+    let zip_path = dest_dir.join("_download.zip");
+
+    let response = reqwest::blocking::get(&url).map_err(|e| format!("Download failed: {}", e))?;
+    if !response.status().is_success() {
+        return Err(format!("HTTP {}", response.status()));
+    }
+
+    let bytes = response.bytes().map_err(|e| format!("Failed to read: {}", e))?;
+    std::fs::write(&zip_path, &bytes).map_err(|e| format!("Failed to write zip: {}", e))?;
+
+    let file = std::fs::File::open(&zip_path).map_err(|e| format!("Invalid zip: {}", e))?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Invalid zip: {}", e))?;
+
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i).map_err(|e| format!("Zip entry: {}", e))?;
+        let raw_name = entry.name().to_string();
+        let is_dir = entry.is_dir();
+
+        // Normalize path separators
+        let name = raw_name.replace('\\', "/");
+        let parts: Vec<&str> = name.split('/').filter(|s| !s.is_empty()).collect();
+        if parts.is_empty() {
+            continue;
+        }
+
+        // Strip single top-level folder if it only wraps FortniteGame/Engine (common in build zips)
+        let out_parts: Vec<&str> = if parts.len() > 1
+            && (parts[0].eq_ignore_ascii_case("FortniteGame") || parts[0].eq_ignore_ascii_case("Engine"))
+        {
+            parts
+        } else if parts.len() > 2
+            && (parts[1].eq_ignore_ascii_case("FortniteGame") || parts[1].eq_ignore_ascii_case("Engine"))
+        {
+            parts[1..].to_vec()
+        } else {
+            parts
+        };
+
+        let out_path = dest_dir.join(out_parts.join("/"));
+
+        if is_dir {
+            std::fs::create_dir_all(&out_path).ok();
+        } else {
+            if let Some(parent) = out_path.parent() {
+                std::fs::create_dir_all(parent).ok();
+            }
+            let mut outfile = std::fs::File::create(&out_path)
+                .map_err(|e| format!("Create file: {}", e))?;
+            std::io::copy(&mut entry, &mut outfile)
+                .map_err(|e| format!("Extract: {}", e))?;
+        }
+    }
+
+    std::fs::remove_file(&zip_path).ok();
+
+    Ok(format!("{} downloaded to {}", version_id, dest_dir.display()))
+}
+
+/// AppData subdirs: mods/installed_mods, mods/data, online, logs, downloads
+fn ensure_app_data_structure(apex: &std::path::Path) -> Result<(), String> {
+    for sub in &[
+        "backend",
+        "gameserver",
+        "redirect",
+        "mods",
+        "mods/installed_mods",
+        "mods/data",
+        "online",
+        "logs",
+        "downloads",
+    ] {
+        std::fs::create_dir_all(apex.join(sub)).map_err(|e| format!("Failed to create {}: {}", sub, e))?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn resolve_app_data_path() -> Result<String, String> {
+    let base = dirs::data_local_dir()
+        .or_else(dirs::data_dir)
+        .ok_or_else(|| "Could not resolve app data directory".to_string())?;
+    let apex = base.join("Apex");
+    ensure_app_data_structure(&apex)?;
+    Ok(apex.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn get_app_data_paths() -> Result<std::collections::HashMap<String, String>, String> {
+    let base = dirs::data_local_dir()
+        .or_else(dirs::data_dir)
+        .ok_or_else(|| "Could not resolve app data directory".to_string())?;
+    let apex = base.join("Apex");
+    ensure_app_data_structure(&apex)?;
+    let mut m = std::collections::HashMap::new();
+    m.insert("root".to_string(), apex.to_string_lossy().to_string());
+    m.insert("mods".to_string(), apex.join("mods").to_string_lossy().to_string());
+    m.insert("mods_installed".to_string(), apex.join("mods").join("installed_mods").to_string_lossy().to_string());
+    m.insert("mods_data".to_string(), apex.join("mods").join("data").to_string_lossy().to_string());
+    m.insert("online".to_string(), apex.join("online").to_string_lossy().to_string());
+    m.insert("logs".to_string(), apex.join("logs").to_string_lossy().to_string());
+    m.insert("downloads".to_string(), apex.join("downloads").to_string_lossy().to_string());
+    Ok(m)
+}
+
+#[tauri::command]
+pub async fn read_log_file() -> Result<String, String> {
+    let base = dirs::data_local_dir()
+        .or_else(dirs::data_dir)
+        .ok_or_else(|| "Could not resolve app data directory".to_string())?;
+    let log_path = base.join("Apex").join("logs").join("apex.log");
+    Ok(std::fs::read_to_string(&log_path).unwrap_or_else(|_| String::new()))
+}
+
+#[tauri::command]
+pub async fn append_log(message: String) -> Result<(), String> {
+    let base = dirs::data_local_dir()
+        .or_else(dirs::data_dir)
+        .ok_or_else(|| "Could not resolve app data directory".to_string())?;
+    let log_dir = base.join("Apex").join("logs");
+    std::fs::create_dir_all(&log_dir).map_err(|e| e.to_string())?;
+    let log_path = log_dir.join("apex.log");
+    let line = format!(
+        "[{}] {}\n",
+        chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+        message
+    );
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .map_err(|e| e.to_string())?
+        .write_all(line.as_bytes())
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn expand_path(path: String) -> String {
+    #[cfg(target_os = "windows")]
+    {
+        let mut s = path;
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            s = s.replace("%APPDATA%", &appdata).replace("%AppData%", &appdata);
+        }
+        if let Ok(local) = std::env::var("LOCALAPPDATA") {
+            s = s.replace("%LOCALAPPDATA%", &local).replace("%LocalAppData%", &local);
+        }
+        s
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let mut s = path;
+        if let Ok(home) = std::env::var("HOME") {
+            s = s.replace("~", &home);
+        }
+        s
+    }
 }
 
 #[tauri::command]

@@ -51,6 +51,7 @@ export async function launchVersion(versionId: string): Promise<void> {
       gameserverPath: files.gameserver.path || '',
       backendHost: config.backendHost,
       backendPort: config.backendPort,
+      extraDllPaths: config.extraDllPaths ?? [],
     })
     toast(`Launched ${versionId}`, 'success')
   } catch (e) {

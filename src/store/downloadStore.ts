@@ -66,7 +66,7 @@ export const useDownloadStore = create<State>((set, get) => ({
     set({ initialized: true })
   },
 
-  startDownload: async (versionId: string, url: string) => {
+  startDownload: async (versionId: string, url: string, installRoot?: string) => {
     await get().initListeners()
 
     set((s) => ({
@@ -128,7 +128,35 @@ export const useDownloadStore = create<State>((set, get) => ({
 
     try {
       const { invoke } = await import('@tauri-apps/api/core')
-      await invoke('download_version', { versionId, url })
+      const root = installRoot ?? (await import('../store/installedStore')).useInstalledStore.getState().installRoot
+      if (!root?.trim()) {
+        set((s) => ({
+          active: {
+            ...s.active,
+            [versionId]: {
+              ...(s.active[versionId] || { versionId, url, status: 'error' as const, bytesDownloaded: 0, totalBytes: null, speedBps: 0 }),
+              status: 'error',
+              error: 'Install directory not set. Go to Settings to configure it.',
+            },
+          },
+        }))
+        return
+      }
+      await invoke('download_version', { versionId, url, installRoot: root })
+      set((s) => {
+        const prev = s.active[versionId]
+        if (!prev) return s
+        return {
+          active: {
+            ...s.active,
+            [versionId]: { ...prev, status: 'completed', bytesDownloaded: prev.totalBytes ?? prev.bytesDownloaded, speedBps: 0 },
+          },
+        },
+      })
+      const { useInstalledStore } = await import('../store/installedStore')
+      useInstalledStore.getState().setInstalled(versionId, true)
+      const { useToastStore } = await import('../store/toastStore')
+      useToastStore.getState().add(`${versionId} downloaded & added to Library`, 'success')
     } catch (e) {
       set((s) => ({
         active: {
